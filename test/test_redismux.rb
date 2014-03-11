@@ -30,5 +30,13 @@ class TestMux < Minitest::Test
     assert(redis2.get("hello") == "worlds")
   end
 
+  def test_reconnect
+    redis1 = new_redis("a")
+    redis1.set "hello", "frog"
+
+    redis1.client.reconnect
+    assert_equal(redis1.get("hello"), "frog")
+  end
+
 end
 
