@@ -28,6 +28,6 @@ redis 127.0.0.1:9911> get hello
 (nil)
 ```
 
-This provides very simple provisioning of redis instances.
+This provides very simple way of provisioning redis instances.
 
-All dbs are stored in the `db/` subdirectory
+All dbs are stored in the `db/` subdirectory together with .sock files
