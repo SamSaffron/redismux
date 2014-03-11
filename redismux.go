@@ -2,6 +2,7 @@ package main
 
 import (
   "flag"
+  "fmt"
   "io/ioutil"
   "log"
   "net"
@@ -9,12 +10,13 @@ import (
   "os/exec"
   "os/signal"
   "strconv"
+  "strings"
   "sync"
   "syscall"
   "time"
 )
 
-var address = flag.String("listen", "0.0.0.0:6379", "The address of the redis mux server")
+var address = flag.String("listen", "0.0.0.0:6379", "The address the redis mux server listens on")
 var verbose = flag.Bool("verbose", false, "Verbose output")
 
 type RedisCommand struct {
@@ -145,6 +147,8 @@ func parse(buffer []byte, length int) (command RedisCommand, err error) {
 
   // TODO add robust error handling
 
+  // log.Println(string(buffer[:length]))
+
   state := START
   first := -1
   paramLength := -1
@@ -169,7 +173,13 @@ func parse(buffer []byte, length int) (command RedisCommand, err error) {
       paramLength, _ = strconv.Atoi(val)
       state = DATA
     } else if state == DATA && char == '\n' {
-      command.Params[pos] = string(buffer[i+1 : i+paramLength+1])
+      to := i + paramLength + 1
+      if to > length {
+        // NOT SUPPORTED ATM
+        err = fmt.Errorf("NOT SUPPORTING LARGE COMMANDS YET")
+        return
+      }
+      command.Params[pos] = string(buffer[i+1 : to])
       pos++
       state = START
       i += paramLength + 2
@@ -230,7 +240,7 @@ func handleConnection(conn net.Conn) {
 
     parsed, err := parse(buffer, read)
 
-    if parsed.ParamCount == 2 && parsed.Params[0] == "AUTH" {
+    if err == nil && parsed.ParamCount == 2 && strings.ToUpper(parsed.Params[0]) == "AUTH" {
       name := parsed.Params[1]
 
       redises.RLock()
