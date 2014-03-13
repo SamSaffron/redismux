@@ -221,17 +221,22 @@ func proxyRedis(client net.Conn, name string) {
 
   Verbose("Proxying :", name)
 
-  server, err := net.Dial("unix", "dbs/"+name+"/redis.sock")
-  if err != nil {
-    log.Println("ERROR: connection to "+name+" not successful: ", err)
-  } else {
-    defer server.Close()
-    done := make(chan bool)
-    go glue(client, server, done)
-    go glue(server, client, done)
+  for retries := 0; retries < 10; retries++ {
+    server, err := net.Dial("unix", "dbs/"+name+"/redis.sock")
+    if err != nil {
+      log.Println("ERROR: connection to "+name+" not successful: ", err, " attempts: ", retries)
+    } else {
+      defer server.Close()
+      done := make(chan bool)
+      go glue(client, server, done)
+      go glue(server, client, done)
 
-    <-done
+      <-done
+      return
+    }
+    time.Sleep(1 * time.Second)
   }
+  log.Println("FAIL: connection to " + name + " not successful timed out")
 }
 
 func sendSimpleReply(conn net.Conn, reply string) {
