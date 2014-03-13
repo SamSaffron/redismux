@@ -20,6 +20,7 @@ import (
 var address = flag.String("listen", "0.0.0.0:6379", "The address the redis mux server listens on")
 var verbose = flag.Bool("verbose", false, "Verbose output")
 var profile = flag.String("profile", "", "write cpu profile to file")
+var maxConnections = flag.Uint64("max_connections", 10000, "maximum number of open connection, will attempt to raise")
 
 type RedisCommand struct {
   ParamCount int
@@ -40,6 +41,7 @@ var redises = struct {
 func main() {
 
   registerExitHandler()
+  raiseUlimit()
 
   flag.Parse()
 
@@ -72,6 +74,39 @@ func main() {
     }
 
   }
+}
+
+func raiseUlimit() {
+
+  var rLimit syscall.Rlimit
+  err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+  if err != nil {
+    log.Fatal("Failed to get open file limit")
+  }
+
+  log.Println("Initial open file limit ", rLimit.Max, "/", rLimit.Cur)
+
+  if rLimit.Max < *maxConnections {
+    rLimit.Max = *maxConnections
+  }
+
+  if rLimit.Cur < *maxConnections {
+    rLimit.Cur = *maxConnections
+  }
+
+  err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+
+  if err != nil {
+    log.Fatal("Failed to raise connection limit to ", maxConnections)
+  }
+
+  err = syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+  if err != nil {
+    log.Fatal("Failed to get open file limit")
+  }
+
+  log.Println("New open file limit ", rLimit.Max, "/", rLimit.Cur)
+
 }
 
 func Verbose(v ...interface{}) {
