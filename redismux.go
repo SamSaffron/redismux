@@ -9,6 +9,7 @@ import (
   "os"
   "os/exec"
   "os/signal"
+  "runtime/pprof"
   "strconv"
   "strings"
   "sync"
@@ -18,6 +19,7 @@ import (
 
 var address = flag.String("listen", "0.0.0.0:6379", "The address the redis mux server listens on")
 var verbose = flag.Bool("verbose", false, "Verbose output")
+var profile = flag.String("profile", "", "write cpu profile to file")
 
 type RedisCommand struct {
   ParamCount int
@@ -40,6 +42,14 @@ func main() {
   registerExitHandler()
 
   flag.Parse()
+
+  if *profile != "" {
+    f, err := os.Create(*profile)
+    if err != nil {
+      log.Fatal(err)
+    }
+    pprof.StartCPUProfile(f)
+  }
 
   files, _ := ioutil.ReadDir("dbs")
   for _, f := range files {
@@ -213,7 +223,7 @@ func proxyRedis(client net.Conn, name string) {
 
   server, err := net.Dial("unix", "dbs/"+name+"/redis.sock")
   if err != nil {
-    log.Println("ERROR: connection to " + name + " not successful")
+    log.Println("ERROR: connection to "+name+" not successful: ", err)
   } else {
     defer server.Close()
     done := make(chan bool)
@@ -285,5 +295,9 @@ func onExit() {
     v.Stop()
   }
   redises.RUnlock()
+
+  if *profile != "" {
+    pprof.StopCPUProfile()
+  }
   log.Println("Exiting...")
 }

@@ -38,5 +38,20 @@ class TestMux < Minitest::Test
     assert_equal(redis1.get("hello"), "frog")
   end
 
+
+  def test_lots_of_connections
+    items = Queue.new
+    (0...1000).map do
+      Thread.new do
+        redis = new_redis("a")
+        redis.set("hello", "world")
+        redis.get("hello")
+        items << 1
+      end
+    end.each(&:join)
+
+    assert_equal(1000, items.length)
+  end
+
 end
 
