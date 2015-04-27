@@ -155,13 +155,13 @@ func ensureBackupRedis(ri *RedisInfo) {
 	log.Println("ensuring backup redis exists for " + ri.Name)
 	c, err := redis.DialTimeout("tcp", *backupRedis, time.Duration(10)*time.Second)
 	if err != nil {
-		log.Println("FAILURE: failed to connect to backup redis")
+		log.Println("FAILURE: failed to connect to backup redis " + *backupRedis)
 		return
 	}
 
 	r := c.Cmd("AUTH", ri.Name)
 	if r.Err != nil {
-		log.Println("FAILURE: failed to provision backup redis")
+		log.Println("FAILURE: failed to provision backup redis " + *backupRedis)
 	}
 }
 
@@ -194,7 +194,13 @@ func startupRedis(name string) {
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Start()
+	err := cmd.Start()
+
+	if err != nil {
+		log.Println("FAILURE: failed to startup redis " + name)
+		log.Println(err)
+		return
+	}
 
 	info := &RedisInfo{
 		Pid:  cmd.Process.Pid,
