@@ -2,3 +2,5 @@ vendor/*
 dbs/*
 redismux
 docker/image/files
+replica/*
+bin/redis-server
