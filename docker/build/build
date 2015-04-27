@@ -3,6 +3,6 @@
 FILES=`readlink -f ../image/files`
 
 docker build -t redismux_build .
-docker run -it --rm -v ${FILES}:/shared redismux_build cp /redismux/redismux /shared
+docker run -it --rm -v ${FILES}:/shared redismux_build cp /gopath/src/github.com/samsaffron/redismux/redismux /shared
 docker run -it --rm -v ${FILES}:/shared redismux_build cp /src/redis/src/redis-server /shared
-docker run -it --rm -v ${FILES}:/shared redismux_build cp /redismux/config/redis.conf /shared
+docker run -it --rm -v ${FILES}:/shared redismux_build cp /gopath/src/github.com/samsaffron/redismux/config/redis.conf /shared

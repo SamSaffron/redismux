@@ -1,17 +1,24 @@
-FROM ubuntu:14.04
+FROM gliderlabs/alpine
 
-ENV REDIS_VERSION 2.8.17
-ENV GOPATH /go
+RUN apk --update add bash git go make gcc
+RUN apk add build-base
 
-RUN apt-get -y update && apt-get -y upgrade && apt-get install -y git wget build-essential
-RUN mkdir /src && cd /src && wget https://godeb.s3.amazonaws.com/godeb-amd64.tar.gz &&\
-          tar -xzvf godeb-amd64.tar.gz && ./godeb install
-RUN cd / && git clone https://github.com/SamSaffron/redismux.git
-RUN mkdir /go && cd redismux && go build
+RUN mkdir -p /gopath/src/github.com/samsaffron && cd /gopath/src/github.com/samsaffron && git clone https://github.com/samsaffron/redismux
+ENV GOPATH /gopath
+RUN mkdir -p /gopath
+RUN cd /gopath/src/github.com/samsaffron/redismux && go get
+RUN cd /gopath/src/github.com/samsaffron/redismux && CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w' .
 
-RUN cd /src && wget http://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz
+ENV REDIS_VERSION 3.0.0
+RUN mkdir /src && cd /src && wget http://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz
+
 RUN cd /src && tar -xzvf redis-${REDIS_VERSION}.tar.gz
 RUN cd /src && mv redis-${REDIS_VERSION} redis
+
+RUN sed -i 's/sys\/types.h/stdint.h/g' /src/redis/src/sha1.c
+RUN sed -i 's/u_int32_t/uint32_t/g' /src/redis/src/sha1.c
+RUN sed -i 's/u_int32_t/uint32_t/g' /src/redis/src/sha1.h
+
 RUN cd /src/redis && make
 
 
