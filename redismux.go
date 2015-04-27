@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/fzzy/radix/redis"
 	"io/ioutil"
 	"log"
 	"net"
@@ -20,7 +21,9 @@ import (
 var address = flag.String("listen", "0.0.0.0:6379", "The address the redis mux server listens on")
 var verbose = flag.Bool("verbose", false, "Verbose output")
 var profile = flag.String("profile", "", "write cpu profile to file")
-var maxConnections = flag.Uint64("max_connections", 10000, "maximum number of open connection, will attempt to raise")
+var maxConnections = flag.Uint64("max_connections", 10000, "maximum number of open connection, will attempt to raise ulimit to this number")
+var backupRedis = flag.String("backup_redis", "", "Address of backup redismux")
+var masterRedis = flag.String("master_redis", "", "Address of master redismux")
 
 type RedisCommand struct {
 	ParamCount int
@@ -147,6 +150,21 @@ func watchRunningRedis(redis *RedisInfo) {
 	// TODO recover
 }
 
+func ensureBackupRedis(ri *RedisInfo) {
+	// first lets make sure we are running
+	log.Println("ensuring backup redis exists for " + ri.Name)
+	c, err := redis.DialTimeout("tcp", *backupRedis, time.Duration(10)*time.Second)
+	if err != nil {
+		log.Println("FAILURE: failed to connect to backup redis")
+		return
+	}
+
+	r := c.Cmd("AUTH", ri.Name)
+	if r.Err != nil {
+		log.Println("FAILURE: failed to provision backup redis")
+	}
+}
+
 func startupRedis(name string) {
 
 	redises.Lock()
@@ -165,6 +183,15 @@ func startupRedis(name string) {
 		"--unixsocket", "redis.sock",
 		"--dir", "./dbs/"+name+"/",
 	)
+
+	if len(*masterRedis) > 0 {
+		cmd.Args = append(cmd.Args,
+			"--slaveof",
+			*masterRedis,
+			"--masterauth",
+			name)
+	}
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Start()
@@ -178,6 +205,10 @@ func startupRedis(name string) {
 	go watchRunningRedis(info)
 
 	redises.m[info.Name] = info
+
+	if len(*backupRedis) > 0 {
+		go ensureBackupRedis(info)
+	}
 }
 
 func parse(buffer []byte, length int) (command RedisCommand, err error) {
