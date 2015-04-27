@@ -1,0 +1,2 @@
+#!/bin/bash
+docker run -d --name redismux -v /var/redismux:/redismux/dbs -p 6379:6379 -w /redismux  --restart=always redismux ./redismux

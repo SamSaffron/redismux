@@ -1,2 +1,4 @@
 vendor/*
 dbs/*
+redismux
+docker/image/files
