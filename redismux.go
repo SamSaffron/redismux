@@ -24,10 +24,12 @@ var profile = flag.String("profile", "", "write cpu profile to file")
 var maxConnections = flag.Uint64("max_connections", 10000, "maximum number of open connection, will attempt to raise ulimit to this number")
 var backupRedis = flag.String("backup_redis", "", "Address of backup redismux")
 var masterRedis = flag.String("master_redis", "", "Address of master redismux")
+var dbs = flag.String("db_dir", "dbs", "Directory for storage of all dbs")
 
 type RedisCommand struct {
 	ParamCount int
 	Params     []string
+	Inline     bool
 }
 
 type RedisInfo struct {
@@ -56,7 +58,7 @@ func main() {
 		pprof.StartCPUProfile(f)
 	}
 
-	files, _ := ioutil.ReadDir("dbs")
+	files, _ := ioutil.ReadDir(*dbs)
 	for _, f := range files {
 		if f.IsDir() {
 			startupRedis(f.Name())
@@ -176,20 +178,18 @@ func startupRedis(name string) {
 	}
 
 	log.Println("Starting up:", name)
-	os.MkdirAll("dbs/"+name, 0770)
+	os.MkdirAll(*dbs+"/"+name, 0770)
 
 	cmd := exec.Command("bin/redis-server",
 		"config/redis.conf",
 		"--unixsocket", "redis.sock",
-		"--dir", "./dbs/"+name+"/",
+		"--dir", "./"+*dbs+"/"+name+"/",
 	)
 
 	if len(*masterRedis) > 0 {
 		cmd.Args = append(cmd.Args,
-			"--slaveof",
-			*masterRedis,
-			"--masterauth",
-			name)
+			"--slaveof "+strings.Replace(*masterRedis, ":", " ", -1),
+			"--masterauth "+name)
 	}
 
 	cmd.Stdout = os.Stdout
@@ -227,9 +227,25 @@ func parse(buffer []byte, length int) (command RedisCommand, err error) {
 		DATA
 	)
 
-	// TODO add robust error handling
+	if length < 1 {
+		err = fmt.Errorf("EMPTY COMMAND")
+		return
+	}
 
-	//log.Println(string(buffer[:length]))
+	// log.Println(string(buffer[:length]))
+
+	command.Inline = string(buffer[0]) != "*"
+
+	// special handling for inline
+	if command.Inline {
+		str := string(buffer[:length])
+		split := strings.Split(strings.Trim(str, "\r\n"), " ")
+		command.Params = split
+		command.ParamCount = len(split)
+		return
+	}
+
+	command.Inline = false
 
 	state := START
 	first := -1
@@ -299,7 +315,7 @@ func proxyRedis(client net.Conn, name string) {
 	Verbose("Proxying :", name)
 
 	for retries := 0; retries < 30; retries++ {
-		server, err := net.Dial("unix", "dbs/"+name+"/redis.sock")
+		server, err := net.Dial("unix", *dbs+"/"+name+"/redis.sock")
 		if err != nil {
 			log.Println("ERROR: connection to "+name+" not successful: ", err, " attempts: ", retries)
 		} else {
@@ -316,8 +332,12 @@ func proxyRedis(client net.Conn, name string) {
 	log.Println("FAIL: connection to " + name + " not successful timed out")
 }
 
-func sendSimpleReply(conn net.Conn, reply string) {
-	conn.Write([]byte("*1\r\n$" + strconv.Itoa(len(reply)) + "\r\n" + reply + "\r\n"))
+func sendSimpleReply(conn net.Conn, reply string, inline bool) {
+	if inline {
+		conn.Write([]byte(reply + "\r\n"))
+	} else {
+		conn.Write([]byte("*1\r\n$" + strconv.Itoa(len(reply)) + "\r\n" + reply + "\r\n"))
+	}
 }
 
 func handleConnection(conn net.Conn) {
@@ -332,6 +352,11 @@ func handleConnection(conn net.Conn) {
 
 		parsed, err := parse(buffer, read)
 
+		if err == nil && parsed.ParamCount == 1 && strings.ToUpper(parsed.Params[0]) == "PING" {
+			sendSimpleReply(conn, "-NOAUTH Authentication required.", parsed.Inline)
+			continue
+		}
+
 		if err == nil && parsed.ParamCount == 2 && strings.ToUpper(parsed.Params[0]) == "AUTH" {
 			name := parsed.Params[1]
 
@@ -341,12 +366,12 @@ func handleConnection(conn net.Conn) {
 			if !running {
 				startupRedis(parsed.Params[1])
 			}
-			sendSimpleReply(conn, "OK")
+			sendSimpleReply(conn, "OK", parsed.Inline)
 			go proxyRedis(conn, parsed.Params[1])
 			return
 		}
 
-		sendSimpleReply(conn, "-Unrecognized Command")
+		sendSimpleReply(conn, "-NOAUTH Authentication required.", parsed.Inline)
 	}
 }
 

@@ -1,0 +1,5 @@
+#!/bin/bash
+
+IP=`ip route get 8.8.8.8 | awk '{print $NF; exit}'`
+
+docker run -it --rm --name redismux-slave -p 10001:6379 -w /redismux samsaffron/redismux ./redismux "-master_redis=$IP 10000"

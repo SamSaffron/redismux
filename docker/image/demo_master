@@ -1,0 +1,5 @@
+#!/bin/bash
+
+IP=`ip route get 8.8.8.8 | awk '{print $NF; exit}'`
+
+docker run -it --rm --name redismux-master -p 10000:6379 -w /redismux samsaffron/redismux ./redismux "-backup_redis=$IP:10001"
