@@ -26,6 +26,8 @@ var backupRedis = flag.String("backup_redis", "", "Address of backup redismux")
 var masterRedis = flag.String("master_redis", "", "Address of master redismux")
 var dbs = flag.String("db_dir", "dbs", "Directory for storage of all dbs")
 
+var backupCheckMutex sync.Mutex
+
 type RedisCommand struct {
 	ParamCount int
 	Params     []string
@@ -33,9 +35,11 @@ type RedisCommand struct {
 }
 
 type RedisInfo struct {
-	Pid  int
-	Name string
-	Cmd  *exec.Cmd
+	Pid          int
+	Name         string
+	Cmd          *exec.Cmd
+	BackupPinged bool
+	Done         chan bool
 }
 
 var redises = struct {
@@ -121,6 +125,11 @@ func Verbose(v ...interface{}) {
 }
 
 func (redis RedisInfo) Stop() {
+
+	pidString := strconv.Itoa(redis.Cmd.Process.Pid)
+
+	log.Println("Stopping Redis " + redis.Name + " pid: " + pidString)
+
 	timeout := make(chan bool)
 	done := make(chan bool)
 
@@ -131,28 +140,35 @@ func (redis RedisInfo) Stop() {
 		timeout <- true
 	}()
 
-	go func() {
-		redis.Cmd.Wait()
-		done <- true
-	}()
-
 	select {
-	case <-done:
-		log.Println("Redis ", redis.Name, "terminated gracefully")
+	case <-redis.Done:
+		log.Println("Redis ", redis.Name, "terminated gracefully ("+pidString+")")
 	case <-timeout:
 		redis.Cmd.Process.Signal(syscall.SIGKILL)
-		log.Println("Redis ", redis.Name, "termination forced")
+		log.Println("Redis ", redis.Name, "termination forced ("+pidString+")")
 		<-done
 	}
 }
 
 func watchRunningRedis(redis *RedisInfo) {
-	redis.Cmd.Wait()
-	log.Println("Redis Stopped ", redis.Name)
-	// TODO recover
+	err := redis.Cmd.Wait()
+	if err != nil {
+		log.Println(fmt.Errorf("Failed to wait on %v %v", redis.Name, err))
+	} else {
+		log.Println("Redis Stopped ", redis.Name)
+		redis.Done <- true
+	}
 }
 
 func ensureBackupRedis(ri *RedisInfo) {
+
+	backupCheckMutex.Lock()
+	defer backupCheckMutex.Unlock()
+
+	if ri.BackupPinged {
+		return
+	}
+
 	// first lets make sure we are running
 	log.Println("ensuring backup redis exists for " + ri.Name)
 	c, err := redis.DialTimeout("tcp", *backupRedis, time.Duration(10)*time.Second)
@@ -164,6 +180,8 @@ func ensureBackupRedis(ri *RedisInfo) {
 	r := c.Cmd("AUTH", ri.Name)
 	if r.Err != nil {
 		log.Println("FAILURE: failed to provision backup redis " + *backupRedis)
+	} else {
+		ri.BackupPinged = true
 	}
 }
 
@@ -206,6 +224,7 @@ func startupRedis(name string) {
 		Pid:  cmd.Process.Pid,
 		Name: name,
 		Cmd:  cmd,
+		Done: make(chan bool),
 	}
 
 	go watchRunningRedis(info)
@@ -361,7 +380,10 @@ func handleConnection(conn net.Conn) {
 			name := parsed.Params[1]
 
 			redises.RLock()
-			_, running := redises.m[name]
+			ri, running := redises.m[name]
+			if ri != nil && !ri.BackupPinged && len(*backupRedis) > 0 {
+				go ensureBackupRedis(ri)
+			}
 			redises.RUnlock()
 			if !running {
 				startupRedis(parsed.Params[1])
@@ -393,10 +415,7 @@ func registerExitHandler() {
 }
 
 func onExit() {
-	// TODO Issue is we need to to stop signal propergation here to
-	//  terminat redis gracefull on sigint, cause redis out fo the box
-	//  will simply terminate
-	// At least this gives redis enough time to terminate if parent gets a SIGTERM
+
 	redises.RLock()
 	for _, v := range redises.m {
 		v.Stop()
