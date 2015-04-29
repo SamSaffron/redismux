@@ -25,6 +25,7 @@ var maxConnections = flag.Uint64("max_connections", 10000, "maximum number of op
 var backupRedis = flag.String("backup_redis", "", "Address of backup redismux")
 var masterRedis = flag.String("master_redis", "", "Address of master redismux")
 var dbs = flag.String("db_dir", "dbs", "Directory for storage of all dbs")
+var startChildrenOnBoot = flag.Bool("start_children_on_boot", false, "Start child redis processes on boot")
 
 var backupCheckMutex sync.Mutex
 
@@ -62,10 +63,12 @@ func main() {
 		pprof.StartCPUProfile(f)
 	}
 
-	files, _ := ioutil.ReadDir(*dbs)
-	for _, f := range files {
-		if f.IsDir() {
-			startupRedis(f.Name())
+	if *startChildrenOnBoot {
+		files, _ := ioutil.ReadDir(*dbs)
+		for _, f := range files {
+			if f.IsDir() {
+				startupRedis(f.Name())
+			}
 		}
 	}
 
