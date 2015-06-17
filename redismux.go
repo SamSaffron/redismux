@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	// "net/http"
+	// _ "net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -76,6 +78,12 @@ func main() {
 	checkError(err)
 	listener, err := net.ListenTCP("tcp", tcpAddr)
 	checkError(err)
+
+	// for pprof
+	// go func() {
+	// 	log.Println(http.ListenAndServe("localhost:6060", nil))
+	// }()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -326,7 +334,12 @@ func glue(client net.Conn, server net.Conn, done chan bool) {
 			return
 		}
 		if read > 0 {
-			server.Write(buffer[:read])
+			_, err2 := server.Write(buffer[:read])
+			if err2 != nil {
+				Verbose("Connection closed")
+				done <- true
+				return
+			}
 		}
 	}
 }
@@ -341,12 +354,19 @@ func proxyRedis(client net.Conn, name string) {
 		if err != nil {
 			log.Println("ERROR: connection to "+name+" not successful: ", err, " attempts: ", retries)
 		} else {
-			defer server.Close()
+
 			done := make(chan bool)
+
 			go glue(client, server, done)
 			go glue(server, client, done)
 
 			<-done
+
+			server.Close()
+			client.Close()
+
+			<-done
+
 			return
 		}
 		time.Sleep(1 * time.Second)
