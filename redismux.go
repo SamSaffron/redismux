@@ -20,6 +20,8 @@ import (
 	"time"
 )
 
+var Version = "1.0.0"
+
 var address = flag.String("listen", "0.0.0.0:6379", "The address the redis mux server listens on")
 var verbose = flag.Bool("verbose", false, "Verbose output")
 var profile = flag.String("profile", "", "write cpu profile to file")
@@ -51,6 +53,11 @@ var redises = struct {
 }{m: make(map[string]*RedisInfo)}
 
 func main() {
+
+	if os.Args[1] == "--version" {
+		fmt.Println("redismux version " + Version)
+		return
+	}
 
 	registerExitHandler()
 	raiseUlimit()
