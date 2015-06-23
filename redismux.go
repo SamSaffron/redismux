@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-var Version = "1.0.0"
+var Version = "1.0.1"
 
 var address = flag.String("listen", "0.0.0.0:6379", "The address the redis mux server listens on")
 var verbose = flag.Bool("verbose", false, "Verbose output")
@@ -54,7 +54,7 @@ var redises = struct {
 
 func main() {
 
-	if os.Args[1] == "--version" {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
 		fmt.Println("redismux version " + Version)
 		return
 	}
