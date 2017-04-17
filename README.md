@@ -32,7 +32,7 @@ This provides very simple way of provisioning redis instances.
 
 All dbs are stored in the `db/` subdirectory together with .sock files
 
-##Master / Slave mode
+## Master / Slave mode
 
 Redismux can automatically configure master slave replication. 
 
